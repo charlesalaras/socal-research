@@ -7,41 +7,36 @@
 #include <dagee/ATMIalloc.h>
 #include <dagee/ATMIdagExecutor.h>
 
+#include "kernel.h"
+
 #define HIP_ASSERT(x) (assert((x)==hipSuccess))
 
-#define THREADS_PER_BLOCK 512
 
-__global__ void multKernel(int n, int a, float * x) { // Buffer Manager?
-    int i = hipBlockIdx_x * hipBlockDim_x + hipThreadIdx_x;
-    if(i < n) {
-        x[i] = a * x[i];
-    }
+void gpu_saxpy_dagee(float alpha, float * x, float * y, int n, BufMgr &bufMgr) { // Buffer Manager?
+if(n == 1) {
+    y[0] = alpha * x[0] + y[0]; 
 }
-
-__global__ void addKernel(int n, float * __restrict__ x, float * __restrict__ y) { // Buffer Manager?
-    int i = hipBlockIdx_x * hipBlockDim_x + hipThreadIdx_x;
-    if(i < n) {
-        y[i] = x[i] + y[i];
-    }
+else if(n == 2) {
+    y[0] = alpha * x[0] + y[0];
+    y[1] = alpha * x[0] + y[0];
 }
-
-void gpu_saxpy_dagee(float * x, float * y, int n, BufMgr &bufMgr) { // Buffer Manager?
-    // if else for smaller sizes
+else {
     dim3 threadsPerBlock = (1024);
     dim3 blocks = ((n - 1) / THREADS_PER_BLOCK + 1);
 
     float empty[n] = {0};
 
-    float *x_1 = bufMgr.makeSharedCopy(empty);
-    float *y_1 = bufMgr.makeSharedCopy(empty);
+    float *a_1 = bufMgr.makeSharedCopy(alpha);
+    float *a_2 = bufMgr.makeSharedCopy(empty);
+    float *a_3 = bufMgr.makeSharedCopy(empty);
 
     for(int i = 0; i < n; i++) {
-        x_1[i] = x[i];
-        y_1[i] = y[i];
+        a_2[i] = x[i];
+        a_3[i] = y[i];
     }
 
-    auto *k_1 = bufMgr.makeSharedCopy(empty);
-    auto *k_2 = bufMgr.makeSharedCopy(empty);
+    float *b_1 = bufMgr.makeSharedCopy(empty);
+    float *c_1 = bufMgr.makeSharedCopy(empty);
 
     using GpuExec = dagee::GpuExecutorAtmi;
     using DagExec = dagee::ATMIdagExecutor<GpuExec>;
@@ -51,39 +46,44 @@ void gpu_saxpy_dagee(float * x, float * y, int n, BufMgr &bufMgr) { // Buffer Ma
 
     auto *dag = dagEx.makeDAG();
 
-    auto multFunc = gpuEx.registerKernel<int, int, float *>(&multKernel);
-    auto addFunc = gpuEx.registerKernel<int, int, float *>(&addKernel);
+    auto multFunc = gpuEx.registerKernel(&multKernel);
+    auto addFunc = gpuEx.registerKernel(&addKernel);
 
-    auto M_Task = dag->addNode(gpuEx.makeTask(blocks, threadsPerBlock, multFunc, a, x_1, k_1, n);
-    auto A_Task = dag->addNode(gpuEx.makeTask(blocks, threadsPerBlock, addFunc, x_1, y_1, k_2, n);
+    auto B_1Task = dag->addNode(gpuEx.makeTask(blocks, threadsPerBlock, multFunc, a_1, a_2, b_1, n);
+    auto C_1Task = dag->addNode(gpuEx.makeTask(blocks, threadsPerBlock, addFunc, b_1, a_3, c_1, n);
 
     dag->addEdge(M_Task, A_Task);
 
     dagEx.execute(dag);
-    float *temp;
-    temp = hipHostMalloc(&temp, n*sizeof(float));
+    
+    float *temp = HIP_ASSERT(hipHostMalloc(&temp, n*sizeof(float)));
 
     for(auto i = 0; i < n; i++) {
-        temp[i] = y[i];
+        temp[i] = c_1[i];
     }
+    for(auto i = 0; i < n; i++) {
+        y[i] = temp[i];
+    }
+}
 }
 
 int main(int argc, char * argv[]) {
-    int n = (argc < 2) ? 8 : atoi(argv[1]);
+    float a = (argc < 3) ? 0.5 : atof(argv[2]);
+    int n = (argc < 4) ? 8 : atoi(argv[3]);
 
-    float *x;
-    float *y;
+    float *h_x;
+    float *h_y;
 
     for(int i = 0; i < n; i++) {
-        x[i] = rand() % 10;
-        y[i] = rand() % 10;
+        h_x[i] = i;
+        h_y[i] = i * 10.0f;
     }
 
     dagee::AllocManagerAtmi bufMgr;
-    auto *d_x = bufMgr.makeSharedCopy(x);
-    auto *d_y = bufMgr.makeSharedCopy(y);
+    auto *x = bufMgr.makeSharedCopy(h_x);
+    auto *y = bufMgr.makeSharedCopy(h_y);
 
-    gpu_saxpy_dagee(d_x, d_y, n, bufMgr);
+    gpu_saxpy_dagee(a, x, y, n, bufMgr);
 
     std::cout << "Done" << std::endl;
 

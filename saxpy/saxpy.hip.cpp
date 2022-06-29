@@ -3,14 +3,41 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "kernel.h"
+
 #define HIP_ASSERT(x) (assert((x)==hipSuccess))
 
-#define THREADS_PER_BLOCK 512
 
-__global__ void saxpy(int n, float a, float * __restrict__ x, float * __restrict__ y) {
-    int i = hipBlockIdx_x * hipBlockDim_x + hipThreadIdx_x;
-    if(i < n) {
-        y[i] = a*x[i] + y[i];
+void gpu_saxpy(float alpha, float __restrict__ x, float* __restrict__ y, int n) {
+    if(n == 1) {
+        y[0] = alpha * x[0] + y[0]; 
+    }
+    else if(n == 2) {
+        y[0] = alpha * x[0] + y[0];
+        y[1] = alpha * x[0] + y[0];
+    }
+    else {
+        float* A_1; // Alpha
+        HIP_ASSERT(hipHostMalloc(&A_1, sizeof(float)));
+        float* A_2; // X
+        HIP_ASSERT(hipHostMalloc(&A_2, sizeof(float)*n));
+        float* A_3; // Y
+        HIP_ASSERT(hipHostMalloc(&A_3, sizeof(float)*n));
+
+        // B_1 = Alpha * A_2
+        float* B_1;
+        HIP_ASSERT(hipHostMalloc(&B_1, sizeof(float)*n));
+        // C_1 = B_1 * A_3
+        float* C_1;
+        HIP_ASSERT(hipHostMalloc(&C_1, sizeof(float)*n));
+
+        dim3 threadsPerBlock = (1024);
+        dim3 blocks = ((n - 1) / threadsPerBlock + 1);
+
+        hipLaunchKernelGGL(multKernel, dim3(blocks), dim3(threadsPerBlock), 0, 0, A_1, A_2, B_1, n);
+        hipDeviceSynchronize();
+        hipLaunchKernelGGL(addKernel, dim3(blocks), dim3(threadsPerBlock), 0, 0, B_1, A_3, C_1, n);
+        hipDeviceSynchronize();
     }
 }
 
