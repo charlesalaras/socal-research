@@ -1,17 +1,17 @@
 #ifndef __SAXPY_H__
 #define __SAXPY_H__
 
-__global__ void multKernel(int n, int a, float * x, dagee::AllocManagerAtmi &bufMgr) {
+__global__ void multKernel(float a, float * x, float * output, int n) {
     int i = hipBlockIdx_x * hipBlockDim_x + hipThreadIdx_x;
     if(i < n) {
-        x[i] = a * x[i];
+        output[i] = a * x[i];
     }
 }
 
-__global__ void addKernel(int n, float * __restrict__ x, float * __restrict__ y, dagee::AllocManagerAtmi &bufMgr) {
+__global__ void addKernel(float * __restrict__ ax, float * __restrict__ y, int n) {
     int i = hipBlockIdx_x * hipBlockDim_x + hipThreadIdx_x;
     if(i < n) {
-        y[i] = x[i] + y[i];
+        y[i] += ax[i];
     }
 }
 

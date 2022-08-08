@@ -33,10 +33,9 @@ ifeq ($(POWER), 1)
 	CXXFLAGS += -DPOWER
 endif
 
-all: saxpy
-
-saxpy:
-	$(CXX) $(CXXFLAGS) saxpy.hip.cpp $(LDFLAGS) -o saxpy
-
+highway:
+	$(CXX) $(CXXFLAGS) highway-lstm.hip.cpp -g -O0 $(LDFLAGS) -o highway
+lstm:
+	$(CXX) $(CXXFLAGS) lstm.hip.cpp $(LDFLAGS) -o lstm
 clean:
-	rm saxpy
+	rm highway lstm
