@@ -123,6 +123,7 @@ void highway_lstm_forward_ongpu(int inputSize, int hiddenSize, int miniBatch, /*
     hipGraphExec_t graphExec;
 */    
     const int numElements = hiddenSize * miniBatch;
+    
     float zero = 0.f;
     float one = 1.f;
    
@@ -147,6 +148,7 @@ void highway_lstm_forward_ongpu(int inputSize, int hiddenSize, int miniBatch, /*
             currNumCovered = 0;
         }
         rocblasAssert(rocblas_set_stream(handle, stream));
+        
         for(int t = startInd; t < seqLength && t >= 0; t = t + direction) {
             int prevIndex;
             if(direction == 1) {
@@ -254,47 +256,35 @@ int main() {
 
     int inputSize, hiddenSize, batchSize, numLayers, seqLength;
     
-    inputSize = 1024;
-    seqLength = 100;
-    numLayers = 1; // Default is 4
-    hiddenSize = 512;
-    batchSize = 64; 
+    inputSize = 3;
+    seqLength = 5;
+    numLayers = 2; // Default is 4
+    hiddenSize = 11;
+    batchSize = 5; 
 
     const int numElements = hiddenSize * batchSize;
 
-    float *x = (float*)malloc(inputSize * sizeof(float)); // Input
-    int *lengths = (int*)malloc(inputSize * sizeof(int)); // What size should lengths be???
-    float *h_data = (float*)malloc((seqLength + 1) * (numLayers) * numElements * sizeof(float)); // State Accumulator
-    float *c_data = (float*)malloc((seqLength) * (numLayers + 1) * numElements * sizeof(float)); // Memory Accumulator
+    float *x = (float*)malloc(miniBatch * timeSteps * input_size * sizeof(float)); // Input
+    int *lengths = (int*)malloc(miniBatch * sizeof(int)); // What size should lengths be???
+    float *h_data = (float*)malloc(numLayers * (seqLength + 1 * miniBatch) * hiddenSize * sizeof(float)); // State Accumulator
+    float *c_data = (float*)malloc(numLayers * (seqLength + 1 * miniBatch) * hiddenSize * sizeof(float)); // Memory Accumulator
 
     // Workspace Variables
-    float *tmp_h = (float*)malloc(4 * numLayers * numElements * sizeof(float));
-    float *tmp_i = (float*)malloc(4 * seqLength * numElements * sizeof(float));
-
-    float *T = (float*)malloc(numLayers * hiddenSize * hiddenSize * 8 * sizeof(float)); // weight
-    float *bias = (float*)malloc(numLayers * hiddenSize * 8 * sizeof(float));
+    float *tmp_h = (float*)malloc(miniBatch * (6 * hiddenSize) * sizeof(float));
+    float *tmp_i = (float*)malloc(miniBatch * (6 * hiddenSize) * sizeof(float));
+    // HARDCODED AHEAD
+    float *T = (float*)malloc(2134 * sizeof(float)); // weight
+    float *bias = (float*)malloc(110 * sizeof(float));
     float *linearGates; // only used during training
     float *dropoutMask = (float*)malloc(numLayers * numElements * sizeof(float)); // what size should dropout mask be???
     srand(1);
-    for(int i = 0; i < inputSize; i++) {
-        x[i] = rand() % 10000;
-        lengths[i] = rand() % 10000;
-    }
-    for(int i = 0; i < (seqLength + 1) * (numLayers) * numElements; i++) {
-        h_data[i] = rand() % 10000; 
-    }
-    for(int i = 0; i < (seqLength) * (numLayers + 1) * numElements; i++) {
-        c_data[i] = rand() % 10000;
-    }
-    for(int i = 0; i < numLayers * hiddenSize * hiddenSize * 8; i++) {
-        T[i] = rand() % 10000;
-    }
-    for(int i = 0; i < numLayers *hiddenSize * 8; i++) {
-        bias[i] = rand() % 10000;
-    }
-    for(int i = 0; i < numLayers * numElements; i++) {
-        dropoutMask[i] = rand() % 10000;
-    }
+    for(int i = 0; i < sizeof(x) / sizeof(x[0]); i++) x[i] = rand() % 10000;
+    for(int i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) lengths[i] = miniBatch + i;
+    for(int i = 0; i < sizeof(h_data) / sizeof(h_data[0]); i++) h_data[i] = 0;
+    for(int i = 0; i < sizeof(c_data) / sizeof(c_data[0]); i++) c_data[i] = 0;
+    for(int i = 0; i < sizeof(T) / sizeof(T[0]); i++) T[i] = rand() % 10000;
+    for(int i = 0; i < sizeof(bias) / sizeof(bias[0]); i++) bias[i] = rand() % 10000;
+    for(int i = 0; i < sizeof(dropoutMask) / sizeof(dropoutMask[0]); i++) dropoutMask[i] = rand() % 10000;
 
     float* d_x;
     float* d_h_data;
